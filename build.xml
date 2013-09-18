@@ -60,6 +60,12 @@
     <get src="http://repo1.maven.org/maven2/org/apache/ivy/ivy/${ivy.jar.version}/${ivy.jar.name}" dest="${user.home}/.ant/lib/${ivy.jar.name}"/>
   </target>
 
+  <path id="ivy.lib.path">
+    <fileset dir="${user.home}/.ant/lib" includes="*.jar"/>
+  </path>
+  <taskdef resource="org/apache/ivy/ant/antlib.xml"
+           uri="antlib:org.apache.ivy.ant" classpathref="ivy.lib.path"/>
+
   <target name="install-cpptasks" unless="cpptasks.available">
     <ivy:cachepath organisation="ant-contrib" module="cpptasks" revision="1.0b5"
       inline="true" conf="default" transitive="true" pathid="cpptasks.classpath"/>
@@ -164,6 +170,9 @@
     <cpptasks:cc
       debug="false"
       optimize="extreme"
+      name="msvc"
+      runtime="static"
+      multithreaded="true"
       objdir="${build}/objects"
       outfile="${build}/jni/${platform}/${os.arch}/lz4-java"
       outtype="shared">
@@ -174,7 +183,11 @@
       <includepath path="${build}/jni-headers" />
       <fileset dir="${src}/lz4" includes="lz4.c, lz4hc.c, xxhash.c" />
       <fileset dir="${src}/jni" includes="*.c" />
-      <linker />
+      <linker
+        debug="false"
+        name="msvc"
+        rebuild="true">
+      </linker>
     </cpptasks:cc>
   </target>
 
