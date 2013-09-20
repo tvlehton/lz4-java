@@ -123,16 +123,13 @@ public final class LZ4Factory {
    * using this method.
    */
   public static LZ4Factory fastestInstance() {
-    if (Native.isLoaded()
-        || Native.class.getClassLoader() == ClassLoader.getSystemClassLoader()) {
+    if (!Native.hasFailedToLoad()) {
       try {
         return nativeInstance();
       } catch (Throwable t) {
-        return fastestJavaInstance();
       }
-    } else {
-      return fastestJavaInstance();
     }
+    return fastestJavaInstance();
   }
 
   @SuppressWarnings("unchecked")

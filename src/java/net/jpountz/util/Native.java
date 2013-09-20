@@ -25,7 +25,7 @@ public enum Native {
 
   private enum OS {
     // Even on Windows, the default compiler from cpptasks (gcc) uses .so as a shared lib extension
-    WINDOWS("win32", "so"), LINUX("linux", "so"), MAC("darwin", "dylib"), SOLARIS("solaris", "so");
+    WINDOWS("win32", "dll"), LINUX("linux", "so"), MAC("darwin", "dylib"), SOLARIS("solaris", "so");
     public final String name, libExtension;
 
     private OS(String name, String libExtension) {
@@ -60,23 +60,31 @@ public enum Native {
   }
 
   private static boolean loaded = false;
+  private static boolean failedToLoad = false;
 
   public static synchronized boolean isLoaded() {
     return loaded;
+  }
+
+  public static synchronized boolean hasFailedToLoad() {
+    return failedToLoad;
   }
 
   public static synchronized void load() {
     if (loaded) {
       return;
     }
-    String resourceName = resourceName();
-    InputStream is = Native.class.getResourceAsStream(resourceName);
-    if (is == null) {
-      throw new UnsupportedOperationException("Unsupported OS/arch, cannot find " + resourceName + ". Please try building from source.");
-    }
-    File tempLib;
+    ClassLoader original = Thread.currentThread().getContextClassLoader();
     try {
-      tempLib = File.createTempFile("liblz4-java", "." + os().libExtension);
+      Thread.currentThread().setContextClassLoader(Native.class.getClassLoader());
+      String resourceName = resourceName();
+      InputStream is = Native.class.getResourceAsStream(resourceName);
+      if (is == null) {
+        failedToLoad = true;
+        throw new UnsupportedOperationException("Unsupported OS/arch, cannot find " + resourceName + ". Please try building from source.");
+      }
+
+      File tempLib = File.createTempFile("liblz4-java", "." + os().libExtension);
       // copy to tempLib
       FileOutputStream out = new FileOutputStream(tempLib);
       try {
@@ -114,7 +122,10 @@ public enum Native {
         }
       }
     } catch (IOException e) {
+        failedToLoad = true;
         throw new ExceptionInInitializerError("Cannot unpack liblz4-java");
+    } finally {
+      Thread.currentThread().setContextClassLoader(original);
     }
   }
 
