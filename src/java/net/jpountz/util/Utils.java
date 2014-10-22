@@ -21,6 +21,17 @@ public enum Utils {
 
   public static final ByteOrder NATIVE_BYTE_ORDER = ByteOrder.nativeOrder();
 
+  private static final boolean unalignedAccessAllowed;
+  static {
+    String arch = System.getProperty("os.arch");
+    unalignedAccessAllowed = arch.equals("i386") || arch.equals("x86")
+            || arch.equals("amd64") || arch.equals("x86_64");
+  }
+
+  public static boolean isUnalignedAccessAllowed() {
+    return unalignedAccessAllowed;
+  }
+
   public static void checkRange(byte[] buf, int off) {
     if (off < 0 || off >= buf.length) {
       throw new ArrayIndexOutOfBoundsException(off);
@@ -61,6 +72,11 @@ public enum Utils {
     }
   }
 
+  public static long readLongLE(byte[] buf, int i) {
+    return (buf[i] & 0xFFL) | ((buf[i+1] & 0xFFL) << 8) | ((buf[i+2] & 0xFFL) << 16) | ((buf[i+3] & 0xFFL) << 24)
+         | ((buf[i+4] & 0xFFL) << 32) | ((buf[i+5] & 0xFFL) << 40) | ((buf[i+6] & 0xFFL) << 48) | ((buf[i+7] & 0xFFL) << 56);
+  }
+
   public static void writeShortLittleEndian(byte[] buf, int off, int v) {
     buf[off++] = (byte) v;
     buf[off++] = (byte) (v >>> 8);
@@ -86,4 +102,7 @@ public enum Utils {
     return buf[off] & 0xFFFF;
   }
 
+  public static long rotateLeft(long val, int x) {
+    return (val << x) | (val >>> (64-x));
+  }
 }

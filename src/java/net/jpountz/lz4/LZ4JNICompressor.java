@@ -15,6 +15,12 @@ package net.jpountz.lz4;
  */
 
 import static net.jpountz.util.Utils.checkRange;
+import static net.jpountz.util.ByteBufferUtils.checkRange;
+import static net.jpountz.util.ByteBufferUtils.checkNotReadOnly;
+
+import java.nio.ByteBuffer;
+
+import net.jpountz.util.ByteBufferUtils;
 
 /**
  * Fast {@link LZ4FastCompressor}s implemented with JNI bindings to the original C
@@ -28,9 +34,29 @@ final class LZ4JNICompressor extends LZ4Compressor {
   public int compress(byte[] src, int srcOff, int srcLen, byte[] dest, int destOff, int maxDestLen) {
     checkRange(src, srcOff, srcLen);
     checkRange(dest, destOff, maxDestLen);
-    final int result = LZ4JNI.LZ4_compress_limitedOutput(src, srcOff, srcLen, dest, destOff, maxDestLen);
+    final int result = LZ4JNI.LZ4_compress_limitedOutput(src, null, srcOff, srcLen, dest, null, destOff, maxDestLen);
     if (result <= 0) {
       throw new LZ4Exception("maxDestLen is too small");
+    }
+    return result;
+  }
+
+  @Override
+  public int compress(ByteBuffer src, int srcOff, int srcLen, ByteBuffer dest, int destOff, int maxDestLen) {
+    checkRange(src, srcOff, srcLen);
+    checkRange(dest, destOff, maxDestLen);
+    checkNotReadOnly(dest);
+    if (!src.isDirect() && src.isReadOnly()) {
+      // JNI can't access data in this case. Fall back to Java implementation.
+      return LZ4Factory.fastestJavaInstance().fastCompressor().
+          compress(src, srcOff, srcLen, dest, destOff, maxDestLen);
+    }
+
+    int result = LZ4JNI.LZ4_compress_limitedOutput(
+        ByteBufferUtils.getArray(src), src, srcOff, srcLen,
+        ByteBufferUtils.getArray(dest), dest, destOff, maxDestLen);
+    if (result <= 0) {
+      throw new LZ4Exception();
     }
     return result;
   }

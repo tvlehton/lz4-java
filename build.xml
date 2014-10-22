@@ -41,6 +41,9 @@
   <condition property="platform" value="darwin">
    <os family="mac"/>
   </condition>
+  <condition property="64bit">
+   <contains string="${sun.arch.data.model}" substring="64"/>
+  </condition>
 
   <target name="clean" description="clean working copy">
     <delete dir="${build}" />
@@ -87,6 +90,14 @@
     <property name="forbidden-apis.available" value="true"/>
   </target>
 
+  <target name="install-bnd" unless="bnd.available">
+    <!-- using bnd 1.50.0 because more recent versions have broken JAR wrapping -->
+    <ivy:cachepath organisation="biz.aQute" module="bnd" revision="1.50.0"
+      inline="true" conf="default" transitive="true" pathid="bnd.classpath"/>
+    <taskdef resource="aQute/bnd/ant/taskdef.properties" classpathref="bnd.classpath"/>
+    <property name="bnd.available" value="true"/> 
+  </target>
+
   <target name="init">
     <tstamp />
     <ivy:resolve conf="test" />
@@ -117,15 +128,6 @@
   </target>
 
   <target name="compile-java" depends="init, generate-sources">
-    <mkdir dir="${build}/classes" />
-    <javac
-      includeAntRuntime="false"
-      srcdir="${src}/java"
-      source="${javac.source}"
-      target="${javac.target}"
-      encoding="UTF-8"
-      debug="true"
-      destdir="${build}/classes"/>
     <mkdir dir="${build}/unsafe-classes" />
     <javac
       includeAntRuntime="false"
@@ -136,6 +138,19 @@
       debug="true"
       classpath="${build}/classes"
       destdir="${build}/unsafe-classes"/>
+    <mkdir dir="${build}/classes" />
+    <javac
+      includeAntRuntime="false"
+      srcdir="${src}/java"
+      source="${javac.source}"
+      target="${javac.target}"
+      encoding="UTF-8"
+      debug="true"
+      destdir="${build}/classes">
+      <classpath>
+        <pathelement location="${build}/unsafe-classes" />
+      </classpath>
+    </javac>
     <mkdir dir="${build}/generated-classes" />
     <javac
       includeAntRuntime="false"
@@ -176,12 +191,13 @@
       objdir="${build}/objects"
       outfile="${build}/jni/${platform}/${os.arch}/lz4-java"
       outtype="shared">
-      <includepath path="${src}/lz4" />
       <includepath path="${src}/xxhash" />
+      <includepath path="${src}/lz4" />
       <includepath path="${java.home}/../include" />
       <includepath path="${java.home}/../include/${platform}/" />
       <includepath path="${build}/jni-headers" />
-      <fileset dir="${src}/lz4" includes="lz4.c, lz4hc.c, xxhash.c" />
+      <fileset dir="${src}/lz4" includes="lz4.c, lz4hc.c" />
+      <fileset dir="${src}/xxhash" includes="xxhash.c" />
       <fileset dir="${src}/jni" includes="*.c" />
       <linker
         debug="false"
@@ -252,6 +268,48 @@
     </junit4:junit4>
   </target>
 
+  <target name="test-large" description="run large tests" depends="compile-tests, install-junit4" if="64bit">
+    <mkdir dir="${build}/tests" />
+    <junit4:junit4
+      dir="${java.io.tmpdir}"
+      maxmemory="6000m"
+      parallelism="auto">
+      <assertions>
+        <enable package="net.jpountz.lz4"/>
+      </assertions>
+      <classpath>
+        <path location="${src}/resources" />
+        <path location="${src}/test-resources" />
+        <path location="${build}/classes" />
+        <path location="${build}/unsafe-classes" />
+        <path location="${build}/generated-classes" />
+        <path location="${build}/test-classes" />
+        <path location="${build}/jni" />
+        <fileset dir="${lib}" includes="*.jar" />
+      </classpath>
+      <fileset dir="${build}/test-classes/">
+        <include name="**/*TestLarge.class" />
+        <exclude name="**/*$*" />
+        <exclude name="**/Abstract*" />
+      </fileset>
+      <listeners>
+        <junit4:report-text
+        showThrowable="true"
+        showStackTraces="true"
+        showOutput="never"
+
+        showStatusOk="true"
+        showStatusError="true"
+        showStatusFailure="true"
+        showStatusIgnored="true"
+
+        showSuiteSummary="false" />
+        <!-- For enkins -->
+        <junit4:report-ant-xml dir="${build}/tests" />
+      </listeners>
+    </junit4:junit4>
+  </target>
+
   <target name="sources" description="package sources">
     <mkdir dir="${dist}" />
     <jar
@@ -283,13 +341,32 @@
   <target name="jar" description="generate JAR" depends="compile">
     <mkdir dir="${dist}" />
     <jar
-      destfile="${dist}/${ivy.module}-${ivy.revision}.jar">
+      destfile="${dist}/${ivy.module}.jar">
       <fileset dir="${src}/resources" erroronmissingdir="false" />
       <fileset dir="${build}/classes" />
       <fileset dir="${build}/unsafe-classes" />
       <fileset dir="${build}/generated-classes" />
       <fileset dir="${build}/jni" erroronmissingdir="false" />
     </jar>
+  </target>
+
+  <target name="bundle" description="makes the JAR a valid OSGi bundle" depends="install-bnd, jar">
+    <taskdef resource="aQute/bnd/ant/taskdef.properties" classpathref="bnd.classpath"/>
+    <property name="packages.version" value="${ivy.revision}"/>
+    <!-- We need to remove potential -SNAPSHOT qualifiers as package versions... -->
+    <script language="javascript">
+            <![CDATA[
+                // lz4 is the ant project name
+                version = lz4.getProperty("packages.version");
+                lz4.setProperty("packages.version", version.replace("-SNAPSHOT", ""));
+            ]]>
+    </script>
+    <!-- wrap the JAR as a bundle and set the proper name -->
+    <bndwrap definitions="${basedir}" output="${dist}/${ivy.module}-${ivy.revision}.jar" trace="true">
+      <fileset dir="${dist}/" includes="${ivy.module}.jar"/>
+    </bndwrap>
+    <!-- remove plain JAR -->
+    <delete file="${dist}/${ivy.module}.jar"/>
   </target>
 
   <target name="makepom" description="generate a pom file">
@@ -302,7 +379,7 @@
     </ivy:makepom>
   </target>
 
-  <target name="dist" description="package" depends="jar,docs,sources,makepom" />
+  <target name="dist" description="package" depends="bundle,docs,sources,makepom" />
 
   <target name="forbidden-apis" description="check API usage" depends="install-forbidden-apis,compile">
     <forbidden-apis internalRuntimeForbidden="true" classpathref="forbidden-apis.classpath">

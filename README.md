@@ -41,6 +41,34 @@ Have a look at LZ4Factory for more information.
    especially if CPU endianness differs, but the compressed streams can be
    safely decompressed by any decompressor implementation on any platform.
 
+## Example
+
+```java
+LZ4Factory factory = LZ4Factory.fastestInstance();
+
+byte[] data = "12345345234572".getBytes("UTF-8");
+final int decompressedLength = data.length;
+
+// compress data
+LZ4Compressor compressor = factory.fastCompressor();
+int maxCompressedLength = compressor.maxCompressedLength(decompressedLength);
+byte[] compressed = new byte[maxCompressedLength];
+int compressedLength = compressor.compress(data, 0, decompressedLength, compressed, 0, maxCompressedLength);
+
+// decompress data
+// - method 1: when the decompressed length is known
+LZ4FastDecompressor decompressor = factory.fastDecompressor();
+byte[] restored = new byte[decompressedLength];
+int compressedLength2 = decompressor.decompress(compressed, 0, restored, 0, decompressedLength);
+// compressedLength == compressedLength2
+
+// - method 2: when the compressed length is known (a little slower)
+// the destination buffer needs to be over-sized
+LZ4SafeDecompressor decompressor2 = factory.safeDecompressor();
+int decompressedLength2 = decompressor2.decompress(compressed, 0, compressedLength, restored, 0);
+// decompressedLength == decompressedLength2
+```
+
 # xxhash Java
 
 xxhash hashing for Java, based on Yann Collet's work available at
@@ -60,6 +88,28 @@ Have a look at XXHashFactory for more information.
  - All implementation return the same hash for the same input bytes:
    - on any JVM,
    - on any platform (even if the endianness or integer size differs).
+
+## Example
+
+```java
+XXHashFactory factory = XXHashFactory.fastestInstance();
+
+byte[] data = "12345345234572".getBytes("UTF-8");
+ByteArrayInputStream in = new ByteArrayInputStream(data);
+
+int seed = 0x9747b28c; // used to initialize the hash value, use whatever
+                       // value you want, but always the same
+StreamingXXHash32 hash32 = factory.newStreamingHash32(seed);
+byte[] buf = new byte[8]; // for real-world usage, use a larger buffer, like 8192 bytes
+for (;;) {
+  int read = in.read(buf);
+  if (read == -1) {
+    break;
+  }
+  hash32.update(buf, 0, read);
+}
+int hash = hash32.getValue();
+```
 
 # Download
 
@@ -86,7 +136,7 @@ speed at which they compress/decompress/hash bytes.
 
 ## Requirements
 
- - JDK version 6 or newer,
+ - JDK version 7 or newer,
  - ant,
  - ivy.
 
@@ -95,6 +145,19 @@ If ivy is not installed yet, ant can take care of it for you, just run
 
 ## Instructions
 
-Then run `ant`. It will compile C and Java code and generate a self-contained
-JAR file under the dist directory.
+Then run `ant`. It will:
 
+ - generate some Java source files in `build/java` from the templates that are
+   located under `src/build`,
+ - compile the lz4 and xxhash libraries and their JNI (Java Native Interface)
+   bindings,
+ - compile Java sources in `src/java` (normal sources), `src/java-unsafe`
+   (sources that make use of `sun.misc.Unsafe`) and `build/java`
+   (auto-generated sources) to `build/classes`, `build/unsafe-classes` and
+   `build/generated-classes`,
+ - generate a JAR file called lz4-${version}.jar under the `dist` directory.
+
+The JAR file that is generated contains Java class files, the native library
+and the JNI bindings. If you add this JAR to your classpath, the native library
+will be copied to a temporary directory and dynamically linked to your Java
+application.
